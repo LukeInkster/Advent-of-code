@@ -16,3 +16,13 @@
               (assoc! m (key-fn x) (val-fn x)))
             (transient {})
             coll)))
+
+
+(defn map-to
+  "Construct a map from key => (val-fn key)."
+  [val-fn keys]
+  (persistent!
+    (reduce (fn [m k]
+              (assoc! m k (val-fn k)))
+            (transient {})
+            keys)))
