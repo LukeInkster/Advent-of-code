@@ -10,32 +10,37 @@
 
 (defn play
   [cups rounds]
-  (let [cnt (inc (count cups))
-        possible-targets (map-to (fn [cup] (map (fn [x] (if (> 1 x) (mod (dec x) cnt) x))
+  (let [cup->next (into {(last cups) (first cups)} (map vec) (partition 2 1 cups))
+        highest (apply max (vals cup->next))
+        possible-targets (map-to (fn [cup] (map (fn [x] (if (< x 1) (mod (dec x) (inc highest)) x))
                                                 (range (dec cup) (- cup 5) -1)))
-                                 cups)]
-    (loop [[cup a b c & more] cups
+                                 (keys cup->next))]
+    (loop [current (first cups)
+           cup->next cup->next
            i 0]
       (if (= i rounds)
-        (into [cup a b c] more)
-        (let [target-val (first (remove #{a b c} (possible-targets cup)))
-              [before [target & after]] (split-with (partial not= target-val) more)]
-          (recur (concat before [target a b c] after [cup]) (inc i)))))))
+        cup->next
+        (let [[a b c] (iterate cup->next (cup->next current))
+              target (first (remove #{a b c} (possible-targets current)))
+              new-cup->next (assoc cup->next
+                              target a
+                              c (cup->next target)
+                              current (cup->next c))]
+          (recur (new-cup->next current) new-cup->next (inc i)))))))
 
 
 (defn part-1
   [input]
-  (let [cups (read-cups input)
-        result (play cups 100)]
-    (string/join "" (rest (take (count cups) (drop-while (partial not= 1) (cycle result)))))))
+  (let [cup->next (play (read-cups input) 100)]
+    (string/join "" (take (dec (count cup->next)) (iterate cup->next (cup->next 1))))))
 
 
 (defn part-2
   [input]
-  (let [cups (take 1000000 (concat (read-cups input) (drop 10 (range))))
-        ;; This takes ~40 seconds for 100 but needs to be able to do 10 million
-        result (play cups 100)]
-    (apply * (rest (take 3 (drop-while (partial not= 1) (cycle result)))))))
+  (let [base-cups (read-cups input)
+        cups (take 1000000 (concat base-cups (drop (inc (count base-cups)) (range))))
+        cup->next (play cups 10000000)]
+    (* (cup->next 1) (cup->next (cup->next 1)))))
 
 
 (def small-input
