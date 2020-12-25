@@ -39,27 +39,28 @@
   [side-id->flipped-side-id side-ids]
   (let [reversed-side-ids (map side-id->flipped-side-id (reverse side-ids))]
     (vec (concat
-           (for [i (range 4)] (vec (concat (drop i side-ids) (take i side-ids))))
-           (for [i (range 4)] (vec (concat (drop i reversed-side-ids) (take i reversed-side-ids))))))))
+           (for [i (range 4)] [i (vec (concat (drop i side-ids) (take i side-ids)))])
+           (for [i (range 4)] [(+ i 4) (vec (concat (drop i reversed-side-ids) (take i reversed-side-ids)))])))))
 
 
 (defn recursive-solve
-  [side-id->flipped-side-id remaining-tile-id->possible-side-ids ids-grid sides-grid i j]
+  [side-id->flipped-side-id remaining-tile-id->possible-side-ids ids-grid sides-grid orientations-grid i j]
   (if (= i (count ids-grid))
-    ids-grid
+    [ids-grid orientations-grid]
     (let [matches-required-sides? (matches-required-sides-fn side-id->flipped-side-id sides-grid i j)
           possible-tile-placements (remove (comp empty? val)
                                            (mapm (fn [possible-side-ids]
-                                                   (filter matches-required-sides? possible-side-ids))
+                                                   (filter (comp matches-required-sides? second) possible-side-ids))
                                                  remaining-tile-id->possible-side-ids))]
       (let [[next-i next-j] (if (= j (dec (count (first ids-grid)))) [(inc i) 0] [i (inc j)])]
         (->> (for [[tile-id placements] possible-tile-placements
-                   placement placements]
+                   [orientation sides] placements]
                (recursive-solve
                  side-id->flipped-side-id
                  (dissoc remaining-tile-id->possible-side-ids tile-id)
                  (assoc-in ids-grid [i j] tile-id)
-                 (assoc-in sides-grid [i j] placement)
+                 (assoc-in sides-grid [i j] sides)
+                 (assoc-in orientations-grid [i j] orientation)
                  next-i
                  next-j))
              (remove empty?)
@@ -82,23 +83,87 @@
         tile-id->possible-side-ids (mapm (partial sides->possible-sides side-id->flipped-side-id) tile-id->base-side-ids)
         grid-size (long (Math/sqrt (count tile-id->tile)))
         initial-grid (vec (repeat grid-size (vec (repeat grid-size nil))))]
-    (recursive-solve side-id->flipped-side-id tile-id->possible-side-ids initial-grid initial-grid 0 0)))
+    (recursive-solve side-id->flipped-side-id tile-id->possible-side-ids initial-grid initial-grid initial-grid 0 0)))
 
 
 (defn part-1
   [input]
   (let [tiles (read-tiles input)
-        solution (solve tiles)
-        grid-size (count (first tiles))]
-    (* (get-in solution [0 0])
-       (get-in solution [0 (dec grid-size)])
-       (get-in solution [(dec grid-size) 0])
-       (get-in solution [(dec grid-size) (dec grid-size)]))))
+        [ids] (solve tiles)
+        end-idx (dec (count (first ids)))]
+    (* (get-in ids [0 0])
+       (get-in ids [0 end-idx])
+       (get-in ids [end-idx 0])
+       (get-in ids [end-idx end-idx]))))
+
+
+(defn remove-border
+  [[id tile]]
+  [id (mapv (fn [row] (vec (rest (butlast row)))) (rest (butlast tile)))])
+
+
+(defn rotate
+  [tile]
+  (let [length (count tile)]
+    (vec (for [i (range length)]
+           (vec (for [j (range length)]
+                  (get-in tile [j (- length i 1)])))))))
+
+
+(defn orient
+  [tile orientation]
+  (let [flipped? (<= 4 orientation)
+        rotations (mod orientation 4)
+        tile (if flipped?
+               (vec (for [i (range (count tile))]
+                      (mapv (fn [row] (nth row i)) tile)))
+               tile)]
+    (nth (iterate rotate tile) rotations)))
+
+
+(def monster
+  (mapv vec (string/split-lines "                  # \n#    ##    ##    ###\n #  #  #  #  #  #   ")))
+
+
+(def monster-hash-count (count (filter #{\#} (flatten monster))))
+
+
+(defn contains-monster?
+  [sub-image]
+  (every? true? (for [i (range (count monster))
+                      j (range (count (nth monster i)))]
+                  (or (not= \# (get-in monster [i j]))
+                      (= \# (get-in sub-image [i j]))))))
+
+
+(defn count-monsters
+  [image]
+  (let [image-height (count image)
+        image-width (count (first image))
+        monster-height (count monster)
+        monster-width (count (first monster))]
+    (count (filter true? (for [start-i (range (inc (- image-height monster-height)))
+                               start-j (range (inc (- image-width monster-width)))]
+                           (let [rows (take monster-height (drop start-i image))
+                                 grid (mapv (fn [row] (vec (take monster-width (drop start-j row)))) rows)]
+                             (contains-monster? grid)))))))
 
 
 (defn part-2
   [input]
-  )
+  (let [tiles (read-tiles input)
+        [ids orientations] (solve tiles)
+        id->orientation (into {} (map (fn [id orientation] [id orientation]) (flatten ids) (flatten orientations)))
+        stripped-tiles (mapv remove-border tiles)
+        id->oriented-tile (into {} (map (fn [[id tile]] [id (orient tile (id->orientation id))]) stripped-tiles))
+        image (mapv vec (mapcat (fn [id-row]
+                                  (let [row-tiles (map id->oriented-tile id-row)]
+                                    (apply (partial mapv concat) row-tiles)))
+                                ids))
+        possible-images (mapv (fn [orientation] (orient image orientation)) (range 8))
+        image-hash-count (count (filter #{\#} (flatten (first possible-images))))
+        hash-counts (map (fn [image] (- image-hash-count (* monster-hash-count (count-monsters image)))) possible-images)]
+    (apply min hash-counts)))
 
 
 (def very-small-input
