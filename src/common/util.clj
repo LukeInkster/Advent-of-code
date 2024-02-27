@@ -26,3 +26,7 @@
               (assoc! m k (val-fn k)))
             (transient {})
             keys)))
+
+(defn parse-int
+  [string]
+  (Integer/parseInt string))
